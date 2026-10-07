@@ -7,6 +7,9 @@ The finished videos in `docs/media/` are 18-second H.264/AAC product showcases c
 - `atlas-demo-vertical.mp4`: 1080×1920
 - `captions.srt`: matching captions, also burned into each composition
 - `*-contact.jpg`: four beats at 390 pixels wide
+- `*-share.png`: standalone sharing images with the current repository address
+
+All demo end cards and share images point to `https://github.com/flyndagr/atlas-washi`. The address is defined once as `REPO_URL` in the renderer.
 
 ## Reproduce
 

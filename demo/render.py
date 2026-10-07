@@ -9,6 +9,7 @@ WORK = ROOT / 'demo/render-work'
 WORK.mkdir(exist_ok=True)
 FF = imageio_ffmpeg.get_ffmpeg_exe()
 FPS, SECONDS = 30, 18
+REPO_URL = 'github.com/flyndagr/atlas-washi'
 INK, PAPER, RED = '#34342b', '#f5efdd', '#9c3e2f'
 TIMELINE = [(0,5,'A quiet place for your thoughts.','focus.png'),
             (5,10,'Fountain-pen feeling. Plain Markdown.','notebook.png'),
@@ -39,7 +40,7 @@ def scene(index,w,h):
         # Final frame names the project and points viewers to the public source.
         d.text((w*.10,h*.36),'atlas',font=font('CormorantGaramond.ttf',round(150*scale)),fill=INK)
         d.text((w*.10,h*.59),'A notebook with room to think.',font=font('Inter-Regular.ttf',round(29*scale)),fill=INK)
-        d.text((w*.10,h*.69),'github.com/flyndagr/atlas-washi',font=font('Inter-Regular.ttf',round(25*scale)),fill=INK)
+        d.text((w*.10,h*.69),REPO_URL,font=font('Inter-Regular.ttf',round(25*scale)),fill=INK)
         d.rounded_rectangle((w*.82,h*.38,w*.90,h*.50),radius=5,outline=RED,width=2)
         d.text((w*.835,h*.389),'静',font=font('ShipporiMincho.ttf',round(62*scale)),fill=RED)
     else:
@@ -78,6 +79,7 @@ def soundtrack():
 
 def render(w,h,name,audio):
     scenes=[scene(i,w,h) for i in range(4)]
+    scenes[3].save(OUT/(name+'-share.png'))
     assert hashlib.sha256(frame(7.25,scenes).tobytes()).digest()==hashlib.sha256(frame(7.25,scenes).tobytes()).digest()
     contact=Image.new('RGB',(780,round(h/w*390)*2),PAPER)
     for i,s in enumerate(scenes):
