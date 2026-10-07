@@ -30,3 +30,5 @@ Pin the three sample notes before capturing canvas. Runtime `.atlas/` files are 
 All three exports decode successfully: 18.00 seconds, 540 frames at 30 fps. Duplicate rendering of a selected frame is byte-identical. Four-beat contact sheets were inspected for composition and caption readability. Measured audio is −15.8 LUFS integrated with a −4.2 dBFS true peak. There is no speech; the captions carry the whole message when muted. Listening/playback review was not performed by a human.
 
 The Japanese 静 seal uses the same `assets/seal.json` geometry, color, glyph, and Shippori Mincho font as the app. Its aspect ratio stays fixed across landscape, square, and portrait exports.
+
+Every scene and share image has a deterministic washi background ported from `src/washi.rs`: Kozo color, multi-scale pulp, and curved fibers at the default 0.7 grain. Backgrounds are fixed across scenes so texture does not shimmer during transitions.

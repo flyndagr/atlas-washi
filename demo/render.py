@@ -1,6 +1,7 @@
 """Deterministic 18-second product showcase. Real app stills; no simulated clicks."""
 from pathlib import Path
 import argparse, hashlib, math, subprocess, wave, struct, json
+from functools import lru_cache
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import imageio_ffmpeg
 ROOT = Path(__file__).resolve().parents[1]
@@ -11,7 +12,7 @@ FF = imageio_ffmpeg.get_ffmpeg_exe()
 FPS, SECONDS = 30, 18
 REPO_URL = 'github.com/flyndagr/atlas-washi'
 SEAL = json.loads((ROOT / 'assets/seal.json').read_text())
-INK, PAPER, RED = '#34342b', '#f5efdd', tuple(SEAL['color'])
+INK, PAPER, RED = '#36352b', '#f9f4e3', tuple(SEAL['color'])
 TIMELINE = [(0,5,'A quiet place for your thoughts.','focus.png'),
             (5,10,'Fountain-pen feeling. Plain Markdown.','notebook.png'),
             (10,15,'Connect your ideas on a canvas.','canvas.png'),
@@ -33,8 +34,57 @@ def draw_seal(im, center, width):
     mark = mark.resize((round(size[0]/4),round(size[1]/4)), Image.Resampling.LANCZOS)
     im.paste(mark, (round(center[0]-mark.width/2),round(center[1]-mark.height/2)), mark)
 
+@lru_cache(maxsize=1)
+def washi_tile():
+    """Atlas's src/washi.rs kozo pulp and fibers, at its default 0.7 grain."""
+    n, strength, seed = 1024, .7, 712367
+    def rand():
+        nonlocal seed
+        seed ^= (seed << 13) & 0xffffffff
+        seed ^= seed >> 17
+        seed ^= (seed << 5) & 0xffffffff
+        return seed / 0xffffffff
+    def pulp(x, y, cells, salt):
+        def noise(x, y):
+            v = ((x % cells) * 374761393 & 0xffffffff) ^ ((y % cells) * 668265263 & 0xffffffff) ^ salt
+            v = ((v ^ (v >> 13)) * 1274126177) & 0xffffffff
+            return (v ^ (v >> 16)) / 0xffffffff
+        x, y = x*cells, y*cells
+        ix, iy = int(x), int(y)
+        u, v = x-ix, y-iy
+        u, v = u*u*(3-2*u), v*v*(3-2*v)
+        return (noise(ix,iy)*(1-u)+noise(ix+1,iy)*u)*(1-v) + (noise(ix,iy+1)*(1-u)+noise(ix+1,iy+1)*u)*v
+    pixels = []
+    for y in range(n):
+        for x in range(n):
+            cloud = sum(pulp(x/n,y/n,c,s)*weight for c,s,weight in [(8,93,.55),(31,721,.30),(113,8123,.15)])
+            density = max(0,(cloud-.33)*35+rand()*8)
+            pixels.append((113,95,63,int(density*strength)))
+    for _ in range(4200):
+        x,y,angle = rand()*n,rand()*n,rand()*math.tau
+        length,bend,alpha = 3+rand()**2*38,(rand()-.5)*5,int((8+rand()*22)*strength)
+        for step in range(int(length)):
+            curve = math.sin(step/length*math.pi)*bend
+            xx = int((x+math.cos(angle)*step-math.sin(angle)*curve)%n)
+            yy = int((y+math.sin(angle)*step+math.cos(angle)*curve)%n)
+            pixels[yy*n+xx] = (126,108,77,alpha)
+            pixels[((yy+1)%n)*n+xx] = (255,255,255,alpha//2)
+    texture = Image.new('RGBA',(n,n))
+    texture.putdata(pixels)
+    return Image.alpha_composite(Image.new('RGBA',(n,n),PAPER),texture).convert('RGB')
+
+@lru_cache(maxsize=3)
+def washi_background(w,h):
+    # Fixed physical scale per format; identical stationary paper across every beat.
+    side = round(768*w/1280)
+    tile = washi_tile().resize((side,side),Image.Resampling.LANCZOS)
+    paper = Image.new('RGB',(w,h),PAPER)
+    for y in range(0,h,side):
+        for x in range(0,w,side): paper.paste(tile,(x,y))
+    return paper
+
 def scene(index,w,h):
-    im=Image.new('RGB',(w,h),PAPER); d=ImageDraw.Draw(im)
+    im=washi_background(w,h).copy(); d=ImageDraw.Draw(im)
     scale=w/1280
     small=font('Inter-Regular.ttf',round(21*scale))
     title=font('CormorantGaramond.ttf',round(48*scale))
