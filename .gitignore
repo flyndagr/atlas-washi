@@ -1,0 +1,9 @@
+/target/
+/dist/
+/design-review/
+/demo/notebook/.atlas/
+/demo/render-work/
+.DS_Store
+.env
+.env.*
+*.log

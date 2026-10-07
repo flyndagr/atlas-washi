@@ -1,0 +1,15 @@
+1
+00:00:00,000 --> 00:00:05,000
+A quiet place for your thoughts.
+
+2
+00:00:05,000 --> 00:00:10,000
+Fountain-pen feeling. Plain Markdown.
+
+3
+00:00:10,000 --> 00:00:15,000
+Connect your ideas on a canvas.
+
+4
+00:00:15,000 --> 00:00:18,000
+Built in Rust. Open source.
