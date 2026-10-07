@@ -7,6 +7,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod controls;
+mod guide;
+mod remember_ui;
 mod washi;
 use washi::{ACCENT, GREEN, INK, LINE, MUTED, PANEL, PAPER};
 
@@ -45,6 +48,10 @@ struct Atlas {
     trash_dialog: bool,
     focus_editor: bool,
     pending_selection: Option<(usize, usize)>,
+    last_refresh: Instant,
+    memory: remember_ui::MemoryUi,
+    guide_open: bool,
+    guide_tab: usize,
 }
 
 impl Atlas {
@@ -74,15 +81,19 @@ impl Atlas {
         style.visuals.window_fill = PAPER;
         style.visuals.extreme_bg_color = PAPER;
         style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(0.5, LINE);
-        style.visuals.widgets.inactive.corner_radius = CornerRadius::same(3);
-        style.visuals.widgets.hovered.corner_radius = CornerRadius::same(3);
+        style.visuals.widgets.inactive.corner_radius = CornerRadius::same(5);
+        style.visuals.widgets.hovered.corner_radius = CornerRadius::same(5);
         style.visuals.text_cursor.stroke = Stroke::new(1.5, ACCENT);
         style.visuals.faint_bg_color = PANEL;
         style.visuals.selection.bg_fill = C::from_rgb(222, 222, 195);
         style.visuals.selection.stroke = Stroke::new(1., GREEN);
         style.visuals.widgets.inactive.bg_fill = PANEL;
         style.visuals.widgets.inactive.weak_bg_fill = PANEL;
-        style.visuals.widgets.inactive.bg_stroke = Stroke::new(1., LINE);
+        style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
+        style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;
+        style.visuals.widgets.active.bg_stroke = Stroke::NONE;
+        style.visuals.widgets.open.bg_stroke = Stroke::NONE;
+        style.spacing.interact_size = vec2(32., 32.);
         style.visuals.widgets.hovered.bg_fill = C::from_rgb(229, 221, 200);
         style.visuals.widgets.hovered.weak_bg_fill = C::from_rgb(229, 221, 200);
         style.spacing.item_spacing = vec2(10., 9.);
@@ -145,6 +156,10 @@ impl Atlas {
             trash_dialog: false,
             focus_editor: false,
             pending_selection: None,
+            last_refresh: Instant::now(),
+            memory: remember_ui::MemoryUi::default(),
+            guide_open: std::env::args().any(|a| a == "--guide"),
+            guide_tab: 0,
         })
     }
     fn select_fresh(&mut self, index: Option<usize>) {
@@ -656,8 +671,8 @@ impl Atlas {
                 ui.add_space(8.);
                 ui.horizontal(|ui| {
                     let (r, _) = ui.allocate_exact_size(vec2(38., 42.), Sense::hover());
-                    washi::enso(ui.painter(), r.center(), 14., INK);
-                    ui.label(R::new("atlas").font(washi::serif(38.)));
+                    washi::brand_mark(ui.painter(), r.center(), 14., INK);
+                    wordmark(ui, 38., 42.);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if icon_button(ui, Icon::Sidebar, "Hide notes sidebar").clicked() {
                             self.panels.toggle_sidebar();
@@ -923,8 +938,8 @@ impl Atlas {
                         self.panels.sidebar = true;
                     }
                     let (r, _) = ui.allocate_exact_size(vec2(20., 26.), Sense::hover());
-                    washi::enso(ui.painter(), r.center(), 8., INK);
-                    ui.label(R::new("atlas").font(washi::serif(25.)));
+                    washi::brand_mark(ui.painter(), r.center(), 8., INK);
+                    wordmark(ui, 25., 26.);
                 }
                 self.files_menu(ui);
                 if icon_toggle(
@@ -1163,13 +1178,27 @@ impl Atlas {
         washi::stamp(&ui.painter().with_clip_rect(document.inner_rect), seal);
     }
     fn canvas(&mut self, ui: &mut Ui) {
+        let mut zoom_request = None;
         ui.horizontal(|ui| {
             ui.label(
-                R::new("Canvas · drag cards or the background · double-click to open")
+                R::new("Canvas · drag to move · double-click to open")
                     .size(11.)
                     .color(MUTED),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.small_button("+").on_hover_text("Zoom in").clicked() {
+                    zoom_request = Some(self.vault.board.zoom * 1.25);
+                }
+                if ui
+                    .small_button(format!("{:.0}%", self.vault.board.zoom * 100.))
+                    .on_hover_text("Reset zoom to 100%")
+                    .clicked()
+                {
+                    zoom_request = Some(1.);
+                }
+                if ui.small_button("−").on_hover_text("Zoom out").clicked() {
+                    zoom_request = Some(self.vault.board.zoom / 1.25);
+                }
                 if icon_button(ui, Icon::Home, "Bring selected card into view").clicked() {
                     if let Some(i) = self.selected {
                         self.vault.board.reveal(&self.vault.notes[i].title);
@@ -1183,6 +1212,26 @@ impl Atlas {
         ui.add_space(8.);
         let (response, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
         let area = response.rect;
+        let hovered = ui
+            .input(|i| i.pointer.hover_pos())
+            .filter(|p| area.contains(*p));
+        if let Some(pointer) = hovered {
+            let factor = ui.input(|i| i.zoom_delta());
+            if factor != 1. {
+                let anchor = pointer - area.min;
+                self.vault
+                    .board
+                    .zoom_at(self.vault.board.zoom * factor, [anchor.x, anchor.y]);
+                self.touch_board();
+            }
+        }
+        if let Some(zoom) = zoom_request {
+            self.vault
+                .board
+                .zoom_at(zoom, [area.width() / 2., area.height() / 2.]);
+            self.touch_board();
+        }
+        let zoom = self.vault.board.zoom;
         painter.rect_filled(area, 2, PANEL);
         washi::paper(&painter, area, &self.paper_texture);
         let painter = painter.with_clip_rect(area.intersect(ui.clip_rect()));
@@ -1201,7 +1250,10 @@ impl Atlas {
                 cards.push((
                     i,
                     title.clone(),
-                    Rect::from_min_size(area.min + vec2(pos[0], pos[1]) + pan, vec2(248., 154.)),
+                    Rect::from_min_size(
+                        area.min + vec2(pos[0], pos[1]) * zoom + pan,
+                        vec2(248., 154.) * zoom,
+                    ),
                 ));
             }
         }
@@ -1258,7 +1310,7 @@ impl Atlas {
                 StrokeKind::Inside,
             );
             painter.rect_filled(
-                Rect::from_min_size(rect.min + vec2(16., 17.), vec2(23., 3.)),
+                Rect::from_min_size(rect.min + vec2(16., 17.) * zoom, vec2(23., 3.) * zoom),
                 1,
                 if selected { ACCENT } else { GREEN },
             );
@@ -1266,8 +1318,8 @@ impl Atlas {
             if title.chars().count() > 24 {
                 card_title.push('…');
             }
-            let heading = painter.layout(card_title, washi::serif(22.), INK, 216.);
-            painter.galley(rect.min + vec2(16., 32.), heading, INK);
+            let heading = painter.layout(card_title, washi::serif(22. * zoom), INK, 216. * zoom);
+            painter.galley(rect.min + vec2(16., 32.) * zoom, heading, INK);
             let excerpt = self.vault.notes[*i]
                 .body
                 .lines()
@@ -1282,17 +1334,17 @@ impl Atlas {
             if excerpt.chars().count() > 70 {
                 short.push('…')
             }
-            let galley = painter.layout(short, washi::pen(17.), MUTED, 216.);
-            painter.galley(rect.min + vec2(16., 61.), galley, MUTED);
+            let galley = painter.layout(short, washi::pen(17. * zoom), MUTED, 216. * zoom);
+            painter.galley(rect.min + vec2(16., 61.) * zoom, galley, MUTED);
             let label = tags(&self.vault.notes[*i].body)
                 .first()
                 .map(|t| format!("#{t}"))
                 .unwrap_or_else(|| "NOTE".into());
             painter.text(
-                rect.min + vec2(16., 132.),
+                rect.min + vec2(16., 132.) * zoom,
                 Align2::LEFT_CENTER,
                 label,
-                FontId::proportional(10.),
+                FontId::proportional(10. * zoom),
                 GREEN,
             );
             if r.clicked() {
@@ -1308,8 +1360,8 @@ impl Atlas {
                 any_drag = true;
                 let d = ui.input(|x| x.pointer.delta());
                 if let Some(pos) = self.vault.board.positions.get_mut(title) {
-                    pos[0] += d.x;
-                    pos[1] += d.y;
+                    pos[0] += d.x / zoom;
+                    pos[1] += d.y / zoom;
                 }
                 self.touch_board();
             }
@@ -1353,6 +1405,26 @@ impl eframe::App for Atlas {
         }
         if ctx.input(|i| i.viewport().close_requested()) && (!self.save() || !self.save_board()) {
             ctx.send_viewport_cmd(ViewportCommand::CancelClose);
+        }
+        if self.last_refresh.elapsed() >= Duration::from_secs(2) && self.error.is_none() {
+            self.last_refresh = Instant::now();
+            match self.vault.refresh_notes(self.selected, self.dirty) {
+                Ok((selected, true)) => {
+                    let old_draft = self.draft.clone();
+                    self.selected = selected;
+                    self.draft = selected
+                        .map(|i| self.vault.notes[i].body.clone())
+                        .unwrap_or_default();
+                    if self.draft != old_draft {
+                        // Discard editor undo/cursor state belonging to the old disk version.
+                        egui::text_edit::TextEditState::default().store(ctx, self.editor_id());
+                        self.pending_selection = None;
+                    }
+                    self.status = "Notes updated from disk".into();
+                }
+                Ok(_) => {}
+                Err(e) => self.status = format!("Automatic refresh paused: {e}"),
+            }
         }
         ctx.request_repaint_after(Duration::from_millis(300));
     }
@@ -1415,12 +1487,16 @@ impl eframe::App for Atlas {
                 washi::paper(ui.painter(), ui.max_rect().expand(30.), &self.paper_texture);
                 self.toolbar(ui);
                 ui.add_space(8.);
+                self.remember_bar(ui);
+                ui.add_space(8.);
                 if self.mode == Mode::Notes {
                     self.notebook(ui)
                 } else {
                     self.canvas(ui)
                 }
             });
+        self.remember_windows(&ctx);
+        self.guide(&ctx);
         if self.new_note {
             let mut create = false;
             let mut cancel = false;
@@ -1439,7 +1515,7 @@ impl eframe::App for Atlas {
                     let texture = ui.painter().add(Shape::Noop);
                     ui.horizontal(|ui| {
                         let (r, _) = ui.allocate_exact_size(vec2(26., 32.), Sense::hover());
-                        washi::enso(ui.painter(), r.center(), 10., ink);
+                        washi::brand_mark(ui.painter(), r.center(), 10., ink);
                         ui.label(R::new("New note").font(washi::serif(32.)).color(ink));
                     });
                     ui.label(R::new("A little space for a new thought.").color(MUTED));
@@ -1476,17 +1552,10 @@ impl eframe::App for Atlas {
                     }
                     ui.add_space(20.);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        create |= ui
-                            .add_enabled(
-                                has_title,
-                                Button::new(R::new("Create note").color(PAPER))
-                                    .fill(ink)
-                                    .min_size(vec2(122., 36.)),
-                            )
-                            .clicked();
-                        cancel |= ui
-                            .add(Button::new("Cancel").min_size(vec2(82., 36.)))
-                            .clicked();
+                        ui.add_enabled_ui(has_title, |ui| {
+                            create |= controls::action(ui, "Create note", true).clicked();
+                        });
+                        cancel |= controls::action(ui, "Cancel", false).clicked();
                     });
                     let paper = ui.min_rect().expand(20.);
                     ui.painter().set(
@@ -1881,6 +1950,17 @@ enum Icon {
     Pin,
     Home,
 }
+/// Align the visible letterforms with adjacent icons, rather than the font's line box.
+fn wordmark(ui: &mut Ui, size: f32, height: f32) {
+    let galley = ui
+        .painter()
+        .layout_no_wrap("atlas".into(), washi::serif(size), INK);
+    let (rect, response) = ui.allocate_exact_size(vec2(galley.size().x, height), Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, "Atlas"));
+    let origin = rect.center() - galley.mesh_bounds.center().to_vec2();
+    ui.painter().galley(origin, galley, INK);
+}
+
 fn icon_button(ui: &mut Ui, icon: Icon, label: &str) -> Response {
     icon_control(ui, icon, label, None)
 }
@@ -2139,12 +2219,13 @@ fn main() -> eframe::Result {
                 }
             }
             "--canvas" => canvas = true,
+            "--review" | "--guide" => {}
             "--write" | "--focus" | "--preview" => {}
             "--screenshot" => screenshot = args.next().map(PathBuf::from),
             "--quit-after-screenshot" => quit_after = true,
             "--help" => {
                 println!(
-                    "Atlas — local Markdown notes and visual canvas\n  atlas [--vault DIR] [--canvas]\n  --screenshot FILE --quit-after-screenshot   capture for verification"
+                    "Atlas — local Markdown notes and visual canvas\n  atlas [--vault DIR] [--canvas] [--review] [--guide]\n  --screenshot FILE --quit-after-screenshot   capture for verification"
                 );
                 return Ok(());
             }
@@ -2156,6 +2237,10 @@ fn main() -> eframe::Result {
     }
     let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
+            .with_icon(
+                eframe::icon_data::from_png_bytes(include_bytes!("../assets/Atlas.png"))
+                    .expect("Bundled Atlas icon must be a valid PNG"),
+            )
             .with_title(format!(
                 "Atlas — {}",
                 root.file_name().unwrap_or_default().to_string_lossy()

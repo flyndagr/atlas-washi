@@ -35,18 +35,37 @@ The default notebook is `~/Documents/Codex/Atlas Vault`. Five sample notes are c
 
 ## Controls
 
+Choose **How to** above the page to open the in-app guide. It explains notes and canvas with a diagram, writing, remembering, and file recovery. Reopen it anytime; Escape or Got it closes it.
+
 Hover any icon for its label. The document icon opens Files (new/import/export/Trash). The canvas icon switches between notebook and canvas; the pin adds the selected note and brings it into view.
 
 - **Sidebar:** changes only the left notes panel.
 - **Focus (⌘⇧F):** hides both panels and restores the previous layout.
 - **Pencil / checkmark:** edit Markdown / return to clean reading.
+- **Canvas zoom:** use − / +, click the percentage to reset to 100%, or pinch over the canvas. Zoom ranges from 25% to 300% and is saved with the layout.
 - **Canvas:** drag a card to arrange it, drag empty space to pan, double-click a card to open it, right-click to unpin without deleting the note. The target icon brings the selected pinned card into view.
 - **Note context menu:** right-click a sidebar note to open, rename, duplicate, export, or move it to Trash.
 - **Lists:** select lines while editing, then choose bullets, numbers, or a checklist. Enter continues a list; Enter on an empty item ends it.
-- **Folder / refresh:** reveal the notebook in Finder / read changes made outside Atlas.
+- **Folder / refresh:** reveal the notebook in Finder / read changes made outside Atlas. Atlas also checks Markdown files every two seconds, retaining the selected file when the list changes. Automatic refresh waits while a draft is unsaved or a conflict dialog is open. External rename/deletion clears the selection rather than switching to a different note.
 - **⌘N / ⌘K / ⌘S / ⌘O / ⇧⌘S:** new note / search / save / import Markdown / export current draft.
 
+## Things to remember
+
+While editing, select a passage and choose **Remember this…**. In reading mode, enter the context yourself. Add an intention, an optional person, and an optional review date (`YYYY-MM-DD`). Atlas creates a separate Markdown note with a source link and a captured quote; your original prose stays intact.
+
+**For today** shows open items whose review date has arrived. **Anytime** holds undated items; **All** includes future, completed and dismissed items. Use Mark done, Reopen, or Change date; More offers Set aside and Open remembered note. Today and Anytime are quick date choices. Saving an intention opens the appropriate review tab. Context is a snapshot: it does not automatically track later edits. A missing source leaves the captured context available.
+
+This first version is an **in-app review**, not a background alarm: open Atlas to check it. It uses your Mac's local date, with no AI service, account, or notification permission. Remembered notes export with the rest of your Markdown; you can edit or trash them like ordinary notes. Keep the generated metadata header intact for the review list to recognize them. Start directly in review with `atlas --review`.
+
+[Research, rollout plan and pilot criteria](docs/remember-plan.md).
+
 ## Files and recovery
+
+### Connections belong to your notes
+
+Canvas arrows come directly from `[[wiki links]]` in your Markdown files. For example, adding `[[Garden of ideas]]` to `A quiet beginning.md` connects those notes; pin both notes to see the arrow. Use **Insert a link** in the right panel or type the link while editing, then save.
+
+Atlas does not store a separate set of connections in its canvas file. `.atlas/canvas.json` holds only card positions, zoom, and the pan offset. Removing a card from the canvas leaves its note and links intact. Exporting the notebook preserves the Markdown links and attachments, while leaving out the Atlas-specific layout. You can read the links in any text editor or use them in a wiki-link-aware app. Copy the whole notebook folder if you also want to preserve the canvas arrangement.
 
 Markdown notes may be nested. Attachments live in `attachments/`; `.atlas/` stores appearance, canvas positions, Trash, and rename backups. Back up the **whole notebook folder** to retain all of them. Notebook export copies visible notes/assets and intentionally excludes hidden Atlas state.
 
@@ -56,7 +75,7 @@ Folder import preserves relative asset paths and copies into a unique `imports/`
 
 ## Current limits
 
-No sync, plugins, inline rich-text editing, full Markdown tables/math, built-in image/PDF viewer, canvas zoom, or automatic filesystem watching. Canvas cards are fixed-size summaries; long titles/excerpts are shortened. Checklist rendering is visual; edit its Markdown to change completion. Keep backups of valuable work while evaluating the prototype.
+No sync, plugins, inline rich-text editing, full Markdown tables/math, built-in image/PDF viewer, native filesystem event watching (automatic refresh uses polling). Canvas cards are fixed-size summaries; long titles/excerpts are shortened. Checklist rendering is visual; edit its Markdown to change completion. Keep backups of valuable work while evaluating the prototype.
 
 ## Development
 

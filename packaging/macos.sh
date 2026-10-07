@@ -18,6 +18,8 @@ cat > "$ATLAS_APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>Atlas</string>
 <key>CFBundleIdentifier</key><string>local.atlas.notebook</string>
 <key>CFBundleIconFile</key><string>Atlas</string>
+<key>LSUIElement</key><false/>
+<key>LSBackgroundOnly</key><false/>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.2.0</string>
 <key>CFBundleVersion</key><string>1</string>

@@ -1,6 +1,7 @@
 //! Plain-file storage: notes remain readable without Atlas.
 pub mod editing;
 pub mod files;
+pub mod remember;
 pub mod view;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -14,28 +15,56 @@ use std::{
 pub type Result<T> = std::result::Result<T, String>;
 static SERIAL: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Note {
     pub title: String,
     pub body: String,
     pub path: PathBuf,
 }
 
-#[derive(Clone, Default, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Board {
     #[serde(default)]
     pub positions: BTreeMap<String, [f32; 2]>,
     #[serde(default)]
     pub pan: [f32; 2],
+    #[serde(default = "default_zoom")]
+    pub zoom: f32,
 }
 
+fn default_zoom() -> f32 {
+    1.
+}
+impl Default for Board {
+    fn default() -> Self {
+        Self {
+            positions: BTreeMap::new(),
+            pan: [0.; 2],
+            zoom: 1.,
+        }
+    }
+}
 impl Board {
+    /// Keep the world point under a viewport-relative anchor stationary.
+    pub fn zoom_at(&mut self, zoom: f32, anchor: [f32; 2]) {
+        if !zoom.is_finite() || anchor.iter().any(|x| !x.is_finite()) {
+            return;
+        }
+        let next = zoom.clamp(0.25, 3.);
+        for (axis, anchor) in anchor.iter().enumerate() {
+            self.pan[axis] = anchor - (anchor - self.pan[axis]) * next / self.zoom;
+        }
+        self.zoom = next;
+    }
     /// Pin in world coordinates near the current viewport; preserve existing cards.
     pub fn pin(&mut self, title: &str) -> bool {
         if self.positions.contains_key(title) {
             return false;
         }
-        let mut pos = [40. - self.pan[0], 40. - self.pan[1]];
+        let mut pos = [
+            (40. - self.pan[0]) / self.zoom,
+            (40. - self.pan[1]) / self.zoom,
+        ];
         while self
             .positions
             .values()
@@ -48,7 +77,7 @@ impl Board {
     }
     pub fn reveal(&mut self, title: &str) {
         if let Some(p) = self.positions.get(title) {
-            self.pan = [40. - p[0], 40. - p[1]];
+            self.pan = [40. - p[0] * self.zoom, 40. - p[1] * self.zoom];
         }
     }
 }
@@ -170,6 +199,9 @@ impl Vault {
         {
             return Err("Canvas contains invalid coordinates".into());
         }
+        if !board.zoom.is_finite() || !(0.25..=3.).contains(&board.zoom) {
+            return Err("Canvas contains invalid zoom".into());
+        }
         let mut vault = Self {
             root,
             notes: vec![],
@@ -201,6 +233,25 @@ impl Vault {
         notes.sort_by_key(|n| n.title.to_lowercase());
         self.notes = notes;
         Ok(())
+    }
+    /// Refresh clean notes atomically, retaining selection by path rather than index.
+    /// Dirty drafts must defer this operation so their save baseline stays intact.
+    pub fn refresh_notes(
+        &mut self,
+        selected: Option<usize>,
+        dirty: bool,
+    ) -> Result<(Option<usize>, bool)> {
+        if dirty {
+            return Ok((selected, false));
+        }
+        let path = selected
+            .and_then(|i| self.notes.get(i))
+            .map(|n| n.path.clone());
+        let before = self.notes.clone();
+        self.reload()?;
+        let changed = before != self.notes;
+        let selected = path.and_then(|p| self.notes.iter().position(|n| n.path == p));
+        Ok((selected, changed))
     }
     pub fn find(&self, title: &str) -> Option<usize> {
         self.notes
@@ -682,6 +733,131 @@ mod tests {
         v.board.pan = [10., 20.];
         v.save_board().unwrap();
         assert!(second.save_board().is_err());
+    }
+    #[test]
+    fn automatic_refresh_tracks_paths_and_defers_dirty_drafts() {
+        let mut v = vault();
+        v.create("Middle", "old").unwrap();
+        let i = v.find("Middle").unwrap();
+        fs::write(v.root.join("Middle.md"), "new").unwrap();
+        fs::write(v.root.join("Earlier.md"), "added").unwrap();
+        assert_eq!(v.refresh_notes(Some(i), true).unwrap(), (Some(i), false));
+        assert_eq!(v.notes[i].body, "old");
+        assert!(v.save(i, "my draft").is_err());
+        let (selected, changed) = v.refresh_notes(Some(i), false).unwrap();
+        assert!(changed);
+        let i = selected.unwrap();
+        assert_eq!(v.notes[i].title, "Middle");
+        assert_eq!(v.notes[i].body, "new");
+        assert_eq!(v.refresh_notes(Some(i), false).unwrap(), (Some(i), false));
+        fs::rename(v.root.join("Middle.md"), v.root.join("Renamed.md")).unwrap();
+        assert_eq!(v.refresh_notes(Some(i), false).unwrap(), (None, true));
+        assert!(v.find("Renamed").is_some());
+        fs::remove_file(v.root.join("Earlier.md")).unwrap();
+        v.refresh_notes(None, false).unwrap();
+        assert!(v.find("Earlier").is_none());
+        let before = v.notes.clone();
+        fs::write(v.root.join("Broken.md"), [255]).unwrap();
+        assert!(v.refresh_notes(None, false).is_err());
+        assert_eq!(v.notes, before);
+    }
+    #[test]
+    fn zoom_preserves_anchor_and_legacy_layouts() {
+        let mut board: Board =
+            serde_json::from_str(r#"{"positions":{"A":[100,200]},"pan":[20,-30]}"#).unwrap();
+        assert_eq!(board.zoom, 1.);
+        let anchor = [240., 160.];
+        let world = [
+            (anchor[0] - board.pan[0]) / board.zoom,
+            (anchor[1] - board.pan[1]) / board.zoom,
+        ];
+        board.zoom_at(2., anchor);
+        for axis in 0..2 {
+            assert!((world[axis] * board.zoom + board.pan[axis] - anchor[axis]).abs() < 0.001);
+        }
+        assert_eq!(board.positions["A"], [100., 200.]);
+        board.reveal("A");
+        assert_eq!(board.pan, [-160., -360.]);
+        board.zoom_at(100., anchor);
+        assert_eq!(board.zoom, 3.);
+        board.zoom_at(0., anchor);
+        assert_eq!(board.zoom, 0.25);
+        board.zoom_at(f32::NAN, anchor);
+        assert_eq!(board.zoom, 0.25);
+        let mut v = vault();
+        v.board = board;
+        v.save_board().unwrap();
+        assert_eq!(Vault::open(v.root.clone()).unwrap().board.zoom, 0.25);
+        fs::write(v.root.join(".atlas/canvas.json"), r#"{"zoom":0}"#).unwrap();
+        assert!(Vault::open(v.root.clone()).is_err());
+    }
+    #[test]
+    fn connections_survive_markdown_export_without_atlas_state() {
+        let mut v = vault();
+        fs::create_dir_all(v.root.join("Research")).unwrap();
+        let body = "# A quiet beginning\n\nSee [[Garden of ideas|my garden]] and [[Research/日本語#Seeds]].\n";
+        v.create("A quiet beginning", body).unwrap();
+        v.create("Garden of ideas", "# Garden of ideas\n").unwrap();
+        fs::write(v.root.join("Research/日本語.md"), "# Seeds\n").unwrap();
+        v.reload().unwrap();
+        for title in ["A quiet beginning", "Garden of ideas", "Research/日本語"] {
+            v.board.pin(title);
+        }
+        v.save_board().unwrap();
+
+        let export = vault().root.join("portable-notebook");
+        v.export_notebook(&export).unwrap();
+        assert!(!export.join(".atlas").exists());
+        // The exported source itself retains the connections, without Atlas metadata.
+        assert_eq!(
+            fs::read_to_string(export.join("A quiet beginning.md")).unwrap(),
+            body
+        );
+        let mut reopened = Vault::open(export).unwrap();
+        assert!(reopened.board.positions.is_empty());
+        let source = reopened.find("A quiet beginning").unwrap();
+        let targets: Vec<_> = wiki_links(&reopened.notes[source].body)
+            .iter()
+            .map(|link| reopened.resolve(link, Some(source)).unwrap())
+            .collect();
+        assert_eq!(targets.len(), 2);
+        for target in targets {
+            let title = reopened.notes[target].title.clone();
+            assert_eq!(reopened.backlinks(&title), vec![source]);
+            // Re-pinning reconstructs the inputs used to draw the canvas arrows.
+            reopened.board.pin(&title);
+        }
+        reopened.board.pin("A quiet beginning");
+        assert_eq!(reopened.board.positions.len(), 3);
+    }
+    #[test]
+    fn unpinning_and_discarding_layout_preserve_note_connections() {
+        let mut v = vault();
+        v.create("Source", "See [[Target]].\n").unwrap();
+        v.create("Target", "# Target\n").unwrap();
+        v.board.pin("Source");
+        v.board.pin("Target");
+        v.save_board().unwrap();
+        let before: Vec<_> = v.notes.iter().map(|n| fs::read(&n.path).unwrap()).collect();
+        v.board.positions.remove("Target");
+        v.board.pan = [123., -45.];
+        v.save_board().unwrap();
+        let reopened = Vault::open(v.root.clone()).unwrap();
+        assert!(!reopened.board.positions.contains_key("Target"));
+        assert_eq!(
+            reopened.backlinks("Target"),
+            vec![reopened.find("Source").unwrap()]
+        );
+        fs::remove_file(v.root.join(".atlas/canvas.json")).unwrap();
+        let reopened = Vault::open(v.root.clone()).unwrap();
+        assert!(reopened.board.positions.is_empty());
+        assert_eq!(
+            reopened.backlinks("Target"),
+            vec![reopened.find("Source").unwrap()]
+        );
+        for (note, original) in reopened.notes.iter().zip(before) {
+            assert_eq!(fs::read(&note.path).unwrap(), original);
+        }
     }
     #[test]
     fn seed_does_not_overwrite_existing_notes() {

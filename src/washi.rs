@@ -237,6 +237,37 @@ pub fn enso(p: &Painter, c: Pos2, r: f32, color: Color32) {
         );
     }
 }
+/// The original open ink circle with a nib drawn directly on the paper.
+/// The slit and breather hole are unpainted, so no background tile is needed.
+pub fn brand_mark(p: &Painter, c: Pos2, r: f32, color: Color32) {
+    enso(p, c, r, color);
+    let mut mesh = Mesh::default();
+    let bounds = |y: f32| {
+        let outer = if y <= 0.18 {
+            0.24 * (y + 0.62) / 0.8
+        } else {
+            0.24 * (0.58 - y) / 0.4
+        };
+        let hole = (0.065_f32.powi(2) - (y - 0.18).powi(2)).max(0.).sqrt();
+        let slit = if y < 0.18 { 0.018 } else { 0. };
+        (outer.max(0.), hole.max(slit).min(outer.max(0.)))
+    };
+    for i in 0..48 {
+        let y0 = -0.62 + i as f32 * 1.2 / 48.;
+        let y1 = -0.62 + (i + 1) as f32 * 1.2 / 48.;
+        let (outer0, inner0) = bounds(y0);
+        let (outer1, inner1) = bounds(y1);
+        for side in [-1., 1.] {
+            let base = mesh.vertices.len() as u32;
+            for (x, y) in [(inner0, y0), (outer0, y0), (outer1, y1), (inner1, y1)] {
+                mesh.colored_vertex(c + vec2(x * side, y) * r, ACCENT);
+            }
+            mesh.add_triangle(base, base + 1, base + 2);
+            mesh.add_triangle(base, base + 2, base + 3);
+        }
+    }
+    p.add(Shape::mesh(mesh));
+}
 pub fn landscape(ui: &mut Ui) {
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 106.), Sense::hover());
     let p = ui.painter_at(r);
