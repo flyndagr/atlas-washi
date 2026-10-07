@@ -262,20 +262,39 @@ pub fn landscape(ui: &mut Ui) {
     }
 }
 
+/// Shared brand geometry, also consumed by the demo renderer.
+#[derive(serde::Deserialize)]
+struct Seal {
+    glyph: String,
+    width: f32,
+    height: f32,
+    inset: f32,
+    radius: f32,
+    stroke: f32,
+    font_size: f32,
+    color: [u8; 3],
+}
 /// Small red seal: 静 (quiet), from the original washi design.
 pub fn stamp(painter: &Painter, rect: Rect) {
+    static SEAL: std::sync::OnceLock<Seal> = std::sync::OnceLock::new();
+    let seal = SEAL.get_or_init(|| {
+        serde_json::from_str(include_str!("../assets/seal.json")).expect("valid bundled seal")
+    });
+    let scale = (rect.width() / seal.width).min(rect.height() / seal.height);
+    let rect = Rect::from_center_size(rect.center(), vec2(seal.width, seal.height) * scale);
+    let color = Color32::from_rgb(seal.color[0], seal.color[1], seal.color[2]);
     painter.rect_stroke(
-        rect.shrink(2.),
-        2,
-        Stroke::new(1.3, ACCENT),
+        rect.shrink(seal.inset * scale),
+        seal.radius * scale,
+        Stroke::new(seal.stroke * scale, color),
         StrokeKind::Inside,
     );
     painter.text(
         rect.center(),
         Align2::CENTER_CENTER,
-        "静",
-        FontId::new(22., FontFamily::Name("Japanese".into())),
-        ACCENT,
+        &seal.glyph,
+        FontId::new(seal.font_size * scale, FontFamily::Name("Japanese".into())),
+        color,
     );
 }
 

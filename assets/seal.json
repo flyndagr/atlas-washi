@@ -1,0 +1,11 @@
+{
+  "glyph": "静",
+  "font": "ShipporiMincho.ttf",
+  "width": 24.0,
+  "height": 30.0,
+  "inset": 2.0,
+  "radius": 2.0,
+  "stroke": 1.3,
+  "font_size": 22.0,
+  "color": [160, 68, 49]
+}

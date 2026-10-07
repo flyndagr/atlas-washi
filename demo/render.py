@@ -1,6 +1,6 @@
 """Deterministic 18-second product showcase. Real app stills; no simulated clicks."""
 from pathlib import Path
-import argparse, hashlib, math, subprocess, wave, struct
+import argparse, hashlib, math, subprocess, wave, struct, json
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import imageio_ffmpeg
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,12 +10,29 @@ WORK.mkdir(exist_ok=True)
 FF = imageio_ffmpeg.get_ffmpeg_exe()
 FPS, SECONDS = 30, 18
 REPO_URL = 'github.com/flyndagr/atlas-washi'
-INK, PAPER, RED = '#34342b', '#f5efdd', '#9c3e2f'
+SEAL = json.loads((ROOT / 'assets/seal.json').read_text())
+INK, PAPER, RED = '#34342b', '#f5efdd', tuple(SEAL['color'])
 TIMELINE = [(0,5,'A quiet place for your thoughts.','focus.png'),
             (5,10,'Fountain-pen feeling. Plain Markdown.','notebook.png'),
             (10,15,'Connect your ideas on a canvas.','canvas.png'),
             (15,18,'Built in Rust. Open source.','focus.png')]
 def font(name,size): return ImageFont.truetype(str(ROOT/'assets'/name),size)
+def draw_seal(im, center, width):
+    # Fixed aspect ratio and supersampling keep the stamp identical in every format.
+    k = width / SEAL['width'] * 4
+    size = (round(SEAL['width'] * k), round(SEAL['height'] * k))
+    mark = Image.new('RGBA', size)
+    pen = ImageDraw.Draw(mark)
+    inset = SEAL['inset'] * k
+    pen.rounded_rectangle((inset, inset, size[0]-inset, size[1]-inset),
+        radius=SEAL['radius']*k, outline=RED, width=round(SEAL['stroke']*k))
+    face = font(SEAL['font'], round(SEAL['font_size']*k))
+    bounds = pen.textbbox((0,0), SEAL['glyph'], font=face)
+    pen.text(((size[0]-bounds[2]-bounds[0])/2, (size[1]-bounds[3]-bounds[1])/2),
+        SEAL['glyph'], font=face, fill=RED)
+    mark = mark.resize((round(size[0]/4),round(size[1]/4)), Image.Resampling.LANCZOS)
+    im.paste(mark, (round(center[0]-mark.width/2),round(center[1]-mark.height/2)), mark)
+
 def scene(index,w,h):
     im=Image.new('RGB',(w,h),PAPER); d=ImageDraw.Draw(im)
     scale=w/1280
@@ -41,8 +58,7 @@ def scene(index,w,h):
         d.text((w*.10,h*.36),'atlas',font=font('CormorantGaramond.ttf',round(150*scale)),fill=INK)
         d.text((w*.10,h*.59),'A notebook with room to think.',font=font('Inter-Regular.ttf',round(29*scale)),fill=INK)
         d.text((w*.10,h*.69),REPO_URL,font=font('Inter-Regular.ttf',round(25*scale)),fill=INK)
-        d.rounded_rectangle((w*.82,h*.38,w*.90,h*.50),radius=5,outline=RED,width=2)
-        d.text((w*.835,h*.389),'静',font=font('ShipporiMincho.ttf',round(62*scale)),fill=RED)
+        draw_seal(im, (w*.86,h*.44), w*.08)
     else:
         bw,bh=box[2]-box[0],box[3]-box[1]
         shot=ImageOps.contain(shot,(bw,bh),Image.Resampling.LANCZOS)
