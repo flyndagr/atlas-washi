@@ -28,6 +28,7 @@ struct Atlas {
     status: String,
     new_note: bool,
     new_title: String,
+    new_note_error: Option<String>,
     focus_new: bool,
     search_focus: bool,
     board_dirty: bool,
@@ -121,6 +122,7 @@ impl Atlas {
             status: "All changes saved".into(),
             new_note: false,
             new_title: String::new(),
+            new_note_error: None,
             focus_new: false,
             search_focus: false,
             board_dirty: false,
@@ -522,6 +524,7 @@ impl Atlas {
     fn new_dialog(&mut self) {
         self.new_note = true;
         self.new_title.clear();
+        self.new_note_error = None;
         self.focus_new = true;
     }
     fn navigate(&mut self, title: &str) {
@@ -1421,34 +1424,85 @@ impl eframe::App for Atlas {
         if self.new_note {
             let mut create = false;
             let mut cancel = false;
-            Window::new("A new thought")
-                .collapsible(false)
-                .resizable(false)
-                .anchor(Align2::CENTER_CENTER, [0., -60.])
+            let ink = self.appearance.kind.ink();
+            let modal = Modal::new(Id::new("new_note_modal"))
+                .backdrop_color(C::from_black_alpha(55))
+                .frame(
+                    Frame::new()
+                        .fill(self.appearance.kind.sheet())
+                        .stroke(Stroke::new(1., LINE))
+                        .corner_radius(8)
+                        .inner_margin(28),
+                )
                 .show(&ctx, |ui| {
-                    ui.set_min_width(360.);
-                    ui.label("Give your note a name. You can link to it using [[this name]].");
-                    let r = ui.add(
-                        TextEdit::singleline(&mut self.new_title)
-                            .desired_width(360.)
-                            .hint_text("Note title"),
-                    );
+                    ui.set_width(420.);
+                    let texture = ui.painter().add(Shape::Noop);
+                    ui.horizontal(|ui| {
+                        let (r, _) = ui.allocate_exact_size(vec2(26., 32.), Sense::hover());
+                        washi::enso(ui.painter(), r.center(), 10., ink);
+                        ui.label(R::new("New note").font(washi::serif(32.)).color(ink));
+                    });
+                    ui.label(R::new("A little space for a new thought.").color(MUTED));
+                    ui.add_space(18.);
+                    let label = ui.label(R::new("Note title").size(12.).color(MUTED));
+                    let r = ui
+                        .add(
+                            TextEdit::singleline(&mut self.new_title)
+                                .font(if self.appearance.fountain {
+                                    washi::script(32.)
+                                } else {
+                                    washi::serif(26.)
+                                })
+                                .text_color(ink)
+                                .margin(vec2(12., 10.))
+                                .desired_width(f32::INFINITY)
+                                .hint_text("Name your note"),
+                        )
+                        .labelled_by(label.id);
                     if self.focus_new {
                         r.request_focus();
                         self.focus_new = false;
                     }
-                    if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                        create = true
+                    if r.changed() {
+                        self.new_note_error = None;
                     }
-                    ui.horizontal(|ui| {
-                        if ui.button("Create note").clicked() {
-                            create = true
-                        }
-                        if ui.button("Cancel").clicked() {
-                            cancel = true
-                        }
+                    let has_title = !self.new_title.trim().is_empty();
+                    if has_title && r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                        create = true;
+                    }
+                    if let Some(error) = &self.new_note_error {
+                        ui.add_space(6.);
+                        ui.label(R::new(error).color(ACCENT).size(12.));
+                    }
+                    ui.add_space(20.);
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        create |= ui
+                            .add_enabled(
+                                has_title,
+                                Button::new(R::new("Create note").color(PAPER))
+                                    .fill(ink)
+                                    .min_size(vec2(122., 36.)),
+                            )
+                            .clicked();
+                        cancel |= ui
+                            .add(Button::new("Cancel").min_size(vec2(82., 36.)))
+                            .clicked();
                     });
+                    let paper = ui.min_rect().expand(20.);
+                    ui.painter().set(
+                        texture,
+                        Shape::image(
+                            self.paper_texture.id(),
+                            paper,
+                            Rect::from_min_max(
+                                pos2(paper.left() / 768., paper.top() / 768.),
+                                pos2(paper.right() / 768., paper.bottom() / 768.),
+                            ),
+                            C::WHITE,
+                        ),
+                    );
                 });
+            cancel |= modal.should_close();
             if create && self.save() {
                 let title = self.new_title.trim().to_owned();
                 match self.vault.create(&title, &format!("# {title}\n\n")) {
@@ -1462,7 +1516,7 @@ impl eframe::App for Atlas {
                         self.mode = Mode::Notes;
                         self.editing = true;
                     }
-                    Err(e) => self.error = Some(e),
+                    Err(e) => self.new_note_error = Some(e),
                 }
             }
             if cancel {
