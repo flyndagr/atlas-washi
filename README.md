@@ -1,6 +1,6 @@
 # Atlas — the Washi Edition
 
-[Website](https://atlas-washi.vercel.app) · [Download for Apple Silicon Mac](https://github.com/flyndagr/atlas-washi/releases/tag/v0.2.0)
+[Website](https://atlas-washi.vercel.app) · [Download for Apple Silicon Mac](https://github.com/flyndagr/atlas-washi/releases/tag/v0.2.1)
 
 Early release: macOS 12+, locally signed, not yet Apple notarized. See the release notes for installation guidance.
 

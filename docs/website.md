@@ -34,3 +34,9 @@ Release v0.2.0 packages app source commit `ac2156f7f4c1f10f1ea76371c54344e5622c1
 - Browser checks: desktop 1440px; mobile 390px and 320px with no horizontal overflow; all three tour tabs; keyboard arrow navigation; FAQ expansion; no JavaScript errors.
 - Production status READY; static build logs contain no build errors.
 - No personal Atlas Vault files were read, changed, or published for this site.
+
+## Branding refresh (0.2.1)
+
+The website, native app, favicon, and Dock icon now derive from `assets/brand.json`; see [brand guidelines](brand.md). All three website tour images and the repository's notebook/canvas/focus screenshots were recaptured from the rebuilt app with disposable sample notes. The website now downloads v0.2.1. The v0.2.0 information above is retained as the initial release record.
+
+Small-size visual review covered 16, 28, 34, 64, and 128px on paper and white. Native build, clippy, and all 31 tests passed. The updated website passed desktop, 390px, and 320px checks, tour clicks and arrow-key navigation, FAQ expansion, and JavaScript error checks.

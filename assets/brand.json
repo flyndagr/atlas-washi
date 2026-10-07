@@ -1,0 +1,6 @@
+{
+  "ink": [54, 53, 43],
+  "accent": [160, 68, 49],
+  "circle": {"start": 0.35, "sweep": 5.86, "segments": 90, "wobble": 0.02, "base_width": 0.045, "width_variation": 0.10},
+  "nib": {"top": -0.62, "shoulder": 0.18, "bottom": 0.58, "half_width": 0.24, "hole_radius": 0.065, "slit_half_width": 0.018, "segments": 48}
+}

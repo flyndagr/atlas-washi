@@ -221,13 +221,47 @@ pub fn sheet_shape(r: Rect, clip: Rect, texture: &TextureHandle, color: Color32)
     ));
     Shape::Vec(shapes)
 }
+#[derive(serde::Deserialize)]
+struct Brand {
+    ink: [u8; 3],
+    accent: [u8; 3],
+    circle: BrandCircle,
+    nib: BrandNib,
+}
+#[derive(serde::Deserialize)]
+struct BrandCircle {
+    start: f32,
+    sweep: f32,
+    segments: usize,
+    wobble: f32,
+    base_width: f32,
+    width_variation: f32,
+}
+#[derive(serde::Deserialize)]
+struct BrandNib {
+    top: f32,
+    shoulder: f32,
+    bottom: f32,
+    half_width: f32,
+    hole_radius: f32,
+    slit_half_width: f32,
+    segments: usize,
+}
+fn brand() -> &'static Brand {
+    static BRAND: std::sync::OnceLock<Brand> = std::sync::OnceLock::new();
+    BRAND.get_or_init(|| {
+        serde_json::from_str(include_str!("../assets/brand.json")).expect("valid brand geometry")
+    })
+}
 pub fn enso(p: &Painter, c: Pos2, r: f32, color: Color32) {
-    for i in 0..90 {
-        let t = i as f32 / 90.;
-        let a = 0.35 + t * 5.86;
-        let b = 0.35 + (i + 1) as f32 / 90. * 5.86;
-        let rr = r * (1. + 0.02 * (a * 5.).sin());
-        let width = r * (0.045 + 0.10 * (std::f32::consts::PI * t).sin().abs());
+    let circle = &brand().circle;
+    for i in 0..circle.segments {
+        let t = i as f32 / circle.segments as f32;
+        let a = circle.start + t * circle.sweep;
+        let b = circle.start + (i + 1) as f32 / circle.segments as f32 * circle.sweep;
+        let rr = r * (1. + circle.wobble * (a * 5.).sin());
+        let width = r
+            * (circle.base_width + circle.width_variation * (std::f32::consts::PI * t).sin().abs());
         p.line_segment(
             [
                 c + vec2(a.cos(), a.sin()) * rr,
@@ -237,30 +271,43 @@ pub fn enso(p: &Painter, c: Pos2, r: f32, color: Color32) {
         );
     }
 }
-/// The original open ink circle with a nib drawn directly on the paper.
-/// The slit and breather hole are unpainted, so no background tile is needed.
-pub fn brand_mark(p: &Painter, c: Pos2, r: f32, color: Color32) {
-    enso(p, c, r, color);
+/// Shared transparent mark; web and Dock exports use the same brand.json geometry.
+pub fn brand_mark(p: &Painter, c: Pos2, r: f32, _color: Color32) {
+    let brand = brand();
+    enso(
+        p,
+        c,
+        r,
+        Color32::from_rgb(brand.ink[0], brand.ink[1], brand.ink[2]),
+    );
+    let nib = &brand.nib;
+    let accent = Color32::from_rgb(brand.accent[0], brand.accent[1], brand.accent[2]);
     let mut mesh = Mesh::default();
     let bounds = |y: f32| {
-        let outer = if y <= 0.18 {
-            0.24 * (y + 0.62) / 0.8
+        let outer = if y <= nib.shoulder {
+            nib.half_width * (y - nib.top) / (nib.shoulder - nib.top)
         } else {
-            0.24 * (0.58 - y) / 0.4
+            nib.half_width * (nib.bottom - y) / (nib.bottom - nib.shoulder)
         };
-        let hole = (0.065_f32.powi(2) - (y - 0.18).powi(2)).max(0.).sqrt();
-        let slit = if y < 0.18 { 0.018 } else { 0. };
+        let hole = (nib.hole_radius.powi(2) - (y - nib.shoulder).powi(2))
+            .max(0.)
+            .sqrt();
+        let slit = if y < nib.shoulder {
+            nib.slit_half_width
+        } else {
+            0.
+        };
         (outer.max(0.), hole.max(slit).min(outer.max(0.)))
     };
-    for i in 0..48 {
-        let y0 = -0.62 + i as f32 * 1.2 / 48.;
-        let y1 = -0.62 + (i + 1) as f32 * 1.2 / 48.;
+    for i in 0..nib.segments {
+        let y0 = nib.top + i as f32 * (nib.bottom - nib.top) / nib.segments as f32;
+        let y1 = nib.top + (i + 1) as f32 * (nib.bottom - nib.top) / nib.segments as f32;
         let (outer0, inner0) = bounds(y0);
         let (outer1, inner1) = bounds(y1);
         for side in [-1., 1.] {
             let base = mesh.vertices.len() as u32;
             for (x, y) in [(inner0, y0), (outer0, y0), (outer1, y1), (inner1, y1)] {
-                mesh.colored_vertex(c + vec2(x * side, y) * r, ACCENT);
+                mesh.colored_vertex(c + vec2(x * side, y) * r, accent);
             }
             mesh.add_triangle(base, base + 1, base + 2);
             mesh.add_triangle(base, base + 2, base + 3);
