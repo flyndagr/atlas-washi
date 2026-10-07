@@ -1,5 +1,9 @@
 # Atlas — the Washi Edition
 
+[Website](https://atlas-washi.vercel.app) · [Download for Apple Silicon Mac](https://github.com/flyndagr/atlas-washi/releases/tag/v0.2.0)
+
+Early release: macOS 12+, locally signed, not yet Apple notarized. See the release notes for installation guidance.
+
 [GitHub · flyndagr/atlas-washi](https://github.com/flyndagr/atlas-washi)
 
 A quiet, native Rust notebook for macOS. Fountain-pen typography, handmade paper, and a canvas for connected ideas. Your notes remain ordinary Markdown files on your Mac.
